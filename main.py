@@ -1,4 +1,3 @@
-from statistics import mode
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -28,6 +27,8 @@ def load_data(path):
     image_size=(img_height, img_width),
     batch_size=batch_size)
 
+    train_ds = train_ds.shuffle(3)
+
     return train_ds, val_ds
 
 def create_model(train_ds, val_ds):
@@ -50,33 +51,57 @@ def create_model(train_ds, val_ds):
     epochs=1
     )
 
-    model.save('my_model')
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    tflite_model = converter.convert()
+
+    with open('my_model.tflite', 'wb') as f:
+        f.write(tflite_model)
+    
     return model
 
 def load_model(path):
     new_model = tf.keras.models.load_model(path)
     return new_model
 
-def predict(model, train_ds):
-    for images, labels in train_ds.take(10):
+def load_model_lit(path):
+    interpreter = tf.lite.Interpreter(path)
+    interpreter.allocate_tensors()
+    return interpreter
+
+
+
+def predict(interpreter, train_ds):
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    
+    for images, labels in train_ds.take(3):
+
+        image = np.expand_dims(images[0], axis=0)
+
         plt.imshow(images[0].numpy().astype("uint8"))
         plt.axis("off")
         plt.show()
-        predictions = model.predict(images)
-        print(np.argmax(predictions[0]))
+        interpreter.set_tensor(input_details[0]['index'], image)
 
+        interpreter.invoke()
+
+        output_data = interpreter.get_tensor(output_details[0]['index'])
+        print('number of fingers:{}'.format(np.argmax(output_data)))
 
 def main():
     train_ds, val_ds = load_data("train");
 
-    choice = input("1. load 2. create: ")
+    choice = input("\n\n1. load\t\t2. create\n:")
 
     if choice == "1":
-        model = tf.keras.models.load_model('my_model')
+        # load_model('my_model')
+        interpreter = load_model_lit("my_model.tflite")
     else :
         model = create_model(train_ds, val_ds)
+        interpreter = load_model_lit("my_model.tflite")
 
-    predict(model, train_ds)
+    predict(interpreter, train_ds)
 
 if __name__ == "__main__":
     main()
